@@ -1,0 +1,62 @@
+[1mdiff --git a/.github/workflows/build-vmlinux-btf.yml b/.github/workflows/build-vmlinux-btf.yml[m
+[1mindex 674cad5..cd9ff2f 100644[m
+[1m--- a/.github/workflows/build-vmlinux-btf.yml[m
+[1m+++ b/.github/workflows/build-vmlinux-btf.yml[m
+[36m@@ -171,7 +171,7 @@[m [mon:[m
+         default: true[m
+ [m
+ permissions:[m
+[31m-  contents: read[m
+[32m+[m[32m  contents: write[m
+ [m
+ concurrency:[m
+   group: build-vmlinux[m
+[36m@@ -269,8 +269,27 @@[m [mjobs:[m
+           # 0.1.0_beta7 while the sources come from the tag itself.[m
+           DAE_VERSION="2.1.3"[m
+           DAE_GIT_TAG="v2.1.3"[m
+[31m-          HONK_VERSION="0.1.0_beta7"[m
+[31m-          HONK_GIT_TAG="v0.1.0-beta.7"[m
+[32m+[m
+[32m+[m[32m# Resolve the newest published Honk release, including prereleases.[m
+[32m+[m[32m# /releases/latest excludes prereleases, so use the releases collection.[m
+[32m+[m[32mHONK_RELEASES="$(curl -fsSL --retry 3 --retry-delay 2 \[m
+[32m+[m[32m  -H 'Accept: application/vnd.github+json' \[m
+[32m+[m[32m  -H 'X-GitHub-Api-Version: 2022-11-28' \[m
+[32m+[m[32m  'https://api.github.com/repos/daeuniverse/honk/releases?per_page=100')"[m
+[32m+[m[32mHONK_GIT_TAG="$(jq -er '[.[] | select(.draft == false)] | sort_by(.published_at // .created_at) | last | .tag_name' <<< "$HONK_RELEASES")"[m
+[32m+[m
+[32m+[m[32m# APK version spelling: 0.1.0-beta.6 -> 0.1.0_beta6.[m
+[32m+[m[32mif [[ "$HONK_GIT_TAG" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)(-(alpha|beta|rc)\.?([0-9]+))?$ ]]; then[m
+[32m+[m[32m  HONK_VERSION="${BASH_REMATCH[1]}"[m
+[32m+[m[32m  if [[ -n "${BASH_REMATCH[3]:-}" ]]; then[m
+[32m+[m[32m    HONK_VERSION+="_${BASH_REMATCH[3]}${BASH_REMATCH[4]}"[m
+[32m+[m[32m  fi[m
+[32m+[m[32melse[m
+[32m+[m[32m  echo "::error::Unsupported Honk release tag '${HONK_GIT_TAG}'. Expected vX.Y.Z or vX.Y.Z-(alpha|beta|rc).N"[m
+[32m+[m[32m  exit 1[m
+[32m+[m[32mfi[m
+[32m+[m[32mecho "Resolved latest Honk release: ${HONK_GIT_TAG} (APK version ${HONK_VERSION})"[m
+[32m+[m
+           echo "Userspace versions: dae ${DAE_VERSION} (${DAE_GIT_TAG}), honk ${HONK_VERSION} (${HONK_GIT_TAG})"[m
+ [m
+           # One UTC date for every release of this run, so all kernel versions[m
+[36m@@ -296,14 +315,10 @@[m [mjobs:[m
+           # The supported architectures (arch_packages), with their kernel arch[m
+           # and the target dae and honk are built with: those packages only[m
+           # depend on the architecture, so one SDK of it is enough[m
+[31m-          grep -v '^#' > /tmp/arches.txt <<'ARCHES'[m
+[31m-          # openwrt_arch|kernel_arch|target/subtarget of dae and honk[m
+[31m-          x86_64|x86_64|x86/64[m
+[31m-          aarch64_generic|arm64|armsr/armv8[m
+[31m-          aarch64_cortex-a53|arm64|mediatek/filogic[m
+[31m-          aarch64_cortex-a72|arm64|bcm27xx/bcm2711[m
+[31m-          aarch64_cortex-a76|arm64|bcm27xx/bcm2712[m
+[31m-          ARCHES[m
+[32m+[m[32mgrep -v '^#' > /tmp/arches.txt <<'ARCHES'[m
+[32m+[m[32m# openwrt_arch|kernel_arch|target/subtarget[m
+[32m+[m[32mx86_64|x86_64|x86/64[m
+[32m+[m[32mARCHES[m
+ [m
+           # The BTF follows the kernel .config of each target (struct offsets[m
+           # differ between targets of one architecture), so vmlinux-btf is built[m

@@ -171,7 +171,7 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-vmlinux
@@ -269,8 +269,27 @@ jobs:
           # 0.1.0_beta7 while the sources come from the tag itself.
           DAE_VERSION="2.1.3"
           DAE_GIT_TAG="v2.1.3"
-          HONK_VERSION="0.1.0_beta7"
-          HONK_GIT_TAG="v0.1.0-beta.7"
+
+# Resolve the newest published Honk release, including prereleases.
+# /releases/latest excludes prereleases, so use the releases collection.
+HONK_RELEASES="$(curl -fsSL --retry 3 --retry-delay 2 \
+  -H 'Accept: application/vnd.github+json' \
+  -H 'X-GitHub-Api-Version: 2022-11-28' \
+  'https://api.github.com/repos/daeuniverse/honk/releases?per_page=100')"
+HONK_GIT_TAG="$(jq -er '[.[] | select(.draft == false)] | sort_by(.published_at // .created_at) | last | .tag_name' <<< "$HONK_RELEASES")"
+
+# APK version spelling: 0.1.0-beta.6 -> 0.1.0_beta6.
+if [[ "$HONK_GIT_TAG" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)(-(alpha|beta|rc)\.?([0-9]+))?$ ]]; then
+  HONK_VERSION="${BASH_REMATCH[1]}"
+  if [[ -n "${BASH_REMATCH[3]:-}" ]]; then
+    HONK_VERSION+="_${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+  fi
+else
+  echo "::error::Unsupported Honk release tag '${HONK_GIT_TAG}'. Expected vX.Y.Z or vX.Y.Z-(alpha|beta|rc).N"
+  exit 1
+fi
+echo "Resolved latest Honk release: ${HONK_GIT_TAG} (APK version ${HONK_VERSION})"
+
           echo "Userspace versions: dae ${DAE_VERSION} (${DAE_GIT_TAG}), honk ${HONK_VERSION} (${HONK_GIT_TAG})"
 
           # One UTC date for every release of this run, so all kernel versions
@@ -296,14 +315,10 @@ jobs:
           # The supported architectures (arch_packages), with their kernel arch
           # and the target dae and honk are built with: those packages only
           # depend on the architecture, so one SDK of it is enough
-          grep -v '^#' > /tmp/arches.txt <<'ARCHES'
-          # openwrt_arch|kernel_arch|target/subtarget of dae and honk
-          x86_64|x86_64|x86/64
-          aarch64_generic|arm64|armsr/armv8
-          aarch64_cortex-a53|arm64|mediatek/filogic
-          aarch64_cortex-a72|arm64|bcm27xx/bcm2711
-          aarch64_cortex-a76|arm64|bcm27xx/bcm2712
-          ARCHES
+grep -v '^#' > /tmp/arches.txt <<'ARCHES'
+# openwrt_arch|kernel_arch|target/subtarget
+x86_64|x86_64|x86/64
+ARCHES
 
           # The BTF follows the kernel .config of each target (struct offsets
           # differ between targets of one architecture), so vmlinux-btf is built
